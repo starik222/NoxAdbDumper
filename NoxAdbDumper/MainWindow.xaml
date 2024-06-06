@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:NoxAdbDumper"
         mc:Ignorable="d"
-        Title="Nox ADB Dumper" Height="450" Width="800" WindowStartupLocation="CenterScreen">
+        Title="Nox ADB Dumper" Height="488" Width="800" WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"></RowDefinition>
@@ -19,11 +19,16 @@
                 <MenuItem x:Name="MI_GetMemMap" Header="Get Memory Map of Process" Click="MI_GetMemMap_Click"></MenuItem>
                 <MenuItem x:Name="MI_DumpSec" Header="Dump Section" Click="MI_DumpSec_Click"></MenuItem>
                 <MenuItem x:Name="MI_DumpAllSec" Header="Dump All Section (Or after select)" Click="MI_DumpAllSec_Click"></MenuItem>
+                <MenuItem x:Name="MI_DumpAllSecOnDev" Header="Dump All Section (Without download)" Click="MI_DumpAllSecOnDev_Click"></MenuItem>
                 <MenuItem x:Name="MI_DumpAllMem" Header="Dump All Memory of Process" Click="MI_DumpAllMem_Click"></MenuItem>
             </MenuItem>
             <MenuItem Header="Kill">
                 <MenuItem x:Name="MI_Kill9" Header="Kill -9 Terminate Select Process" Click="MI_Kill9_Click"></MenuItem>
                 <MenuItem x:Name="MI_Kill19" Header="kill -19 Stop Select Process" Click="MI_Kill19_Click"></MenuItem>
+            </MenuItem>
+            <MenuItem Header="Settings">
+                <MenuItem x:Name="MI_SuMode" Header="Shell su mode" IsCheckable="True"/>
+                <MenuItem x:Name="Mi_Options" Header="Options..." Click="Mi_Options_Click"/>
             </MenuItem>
         </Menu>
         <Grid HorizontalAlignment="Left" Height="400" Margin="0,0,-0.4,0" Grid.Row="1" VerticalAlignment="Top" Width="794">
@@ -76,5 +81,8 @@
                 </TabItem>
             </TabControl>
         </Grid>
+        <StatusBar x:Name="st_Bar" Grid.Row="1" Margin="0,405,0,0">
+            <Label x:Name="st_Text" Content="-"/>
+        </StatusBar>
     </Grid>
 </Window>

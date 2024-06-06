@@ -15,5 +15,7 @@ namespace NoxAdbDumper
         public static string Root = Directory.GetCurrentDirectory();
         public static string proc_filter = "";
         public static string sect_filter = "";
+        public static SettingsData Settings { get; set; } = null;
+        public static string SettingsPath { get; set; } = Path.Combine(App.Root, "Settings.json");
     }
 }

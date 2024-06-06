@@ -22,10 +22,22 @@ namespace NoxAdbDumper
             ppid = Convert.ToUInt32(parts[2]);
             vsize = Convert.ToUInt32(parts[3]);
             rss = Convert.ToUInt32(parts[4]);
-            //wchan = Convert.ToUInt32(parts[5], 16);
-            pc = parts[5];
-            flag = parts[6];
-            name = parts[7];
+
+            if (parts.Length == 9)
+            {
+                wchan = Convert.ToUInt32(parts[5], 16);
+                pc = parts[6];
+                flag = parts[7];
+                name = parts[8];
+            }
+            else if (parts.Length == 8)
+            {
+                pc = parts[5];
+                flag = parts[6];
+                name = parts[7];
+            }
+            else
+                throw new NotImplementedException("Unknown 'shell ps' result");
         }
     }
 }

@@ -29,11 +29,11 @@ namespace NoxAdbDumper
             foreach (string l in lines)
             {
                 string[] tokens = Regex.Split(l.Trim(), "\\s+");
-                if (tokens[0] == "TCP" && tokens[1].StartsWith("127.0.0.1:62") && tokens[2] == "0.0.0.0:0")
+                if (tokens[0] == "TCP" && (tokens[1].StartsWith("127.0.0.1:62") || tokens[1].Equals("127.0.0.1:5555")) && tokens[2] == "0.0.0.0:0")
                 {
                     int pid = Convert.ToInt32(tokens[4]);
                     Process p = Process.GetProcessById(pid);
-                    if (p.ProcessName.ToLower().Contains("nox"))
+                    if (p.ProcessName.ToLower().Contains("nox") || p.ProcessName.ToLower().Equals("hd-player"))
                         ls_device.Items.Add(l + "\t" + p.ProcessName);
                 }
             }

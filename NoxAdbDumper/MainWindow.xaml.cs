@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,6 +18,18 @@ namespace NoxAdbDumper
         public MainWindow()
         {
             InitializeComponent();
+            if (File.Exists(App.SettingsPath))
+            {
+                App.Settings = JsonConvert.DeserializeObject<SettingsData>(File.ReadAllText(App.SettingsPath));
+            }
+            else
+            {
+                App.Settings = new SettingsData();
+                App.Settings.AdbPath = Path.Combine(App.Root, "adb.exe");
+                App.Settings.DumpSavePathOnDevice = "/data/data/com.wv.noxdumper/";
+                App.Settings.DumpSavePathOnPC = Path.Combine(App.Root, "Dump");
+                App.Settings.SaveSettings();
+            }
         }
 
         private void MI_ConnectNox_Click(object sender, RoutedEventArgs e)
@@ -25,19 +38,20 @@ namespace NoxAdbDumper
             d.input = RunShell("netstat", "-aon", false);
             d.ShowDialog();
             if (d.output != "")
-                MessageBox.Show(RunShell("nox_adb.exe", "connect " + d.output));
+                MessageBox.Show(RunShell(App.Settings.AdbPath, "connect " + d.output));
         }
 
         private void MI_DisConnectNox_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show(RunShell("nox_adb.exe", "disconnect"));
+            MessageBox.Show(RunShell(App.Settings.AdbPath, "disconnect"));
         }
 
         private void MI_ProcessList_Click(object sender, RoutedEventArgs e)
         {
             App.procs = new List<ProcInfo>();
             //string[] commands = new string[] { "ps -t", "ps" };
-            string[] commands = new string[] { "ps -t" };
+            //string[] commands = new string[] { "ps -T" };
+            string[] commands = new string[] { "ps" };
             foreach (string command in commands)
             {
                 string result = RunNoxShell(command);
@@ -111,13 +125,10 @@ namespace NoxAdbDumper
 
             int n = (ls_Proc.SelectedItem as ProcStruct).Count;
             int m = Convert.ToInt32(ls_Mem.SelectedItem.ToString().Split('|')[0]);
-
-            if (File.Exists("dump.bin"))
-                File.Delete("dump.bin");
-            DumpSection(n, m);
+            DumpSection(n, m, App.Settings.DumpSavePathOnPC);
         }
 
-        private void MI_DumpAllSec_Click(object sender, RoutedEventArgs e)
+        private async void MI_DumpAllSec_Click(object sender, RoutedEventArgs e)
         {
             int num = 0;
             if (ls_Proc.SelectedIndex == -1) return;
@@ -132,28 +143,74 @@ namespace NoxAdbDumper
             {
                 pb1.Maximum = App.sections.Count;
                 menu1.IsEnabled = false;
+                await Task.Run(() =>
+                {
+                    for (int i = num; i < App.sections.Count; i++)
+                    {
+                        string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
+                        try
+                        {
+                            DumpSection(n, i, openFolderDialog.Folder);
+                        }
+                        catch (Exception ex)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
+                            });
+                        }
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            pb1.Value = i;
+                            st_Text.Content = $"Progress: {i - num} / {App.sections.Count - num}";
+                        });
+                    }
+
+                });
+                menu1.IsEnabled = true;
+                pb1.Value = 0;
+            }
+        }
+
+        private async void MI_DumpAllSecOnDev_Click(object sender, RoutedEventArgs e)
+        {
+            int num = 0;
+            if (ls_Proc.SelectedIndex == -1) return;
+            int n = (ls_Proc.SelectedItem as ProcStruct).Count;
+
+            int m = ls_Mem.SelectedIndex;
+            if (m != -1) num = Convert.ToInt32(ls_Mem.SelectedItem.ToString().Split('|')[0]);
+
+            pb1.Maximum = App.sections.Count;
+            menu1.IsEnabled = false;
+            await Task.Run(() =>
+            {
                 for (int i = num; i < App.sections.Count; i++)
                 {
                     string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
                     try
                     {
-                        if (File.Exists("dump.bin"))
-                            File.Delete("dump.bin");
-                        DumpSection(n, i);
-                        if (File.Exists("dump.bin"))
-                            File.Move("dump.bin", openFolderDialog.Folder + "\\" + name);
-                        pb1.Value = i;
-                        // Update UI
-                        Task.Delay(1);
+                        DumpSectionOnDevice(n, i);
                     }
                     catch (Exception ex)
                     {
-                        MessageBox.Show("Error for section #" + i + " '" + name + "'!\n" + ex.Message);
+                        Dispatcher.Invoke(() =>
+                        {
+                            tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
+                        });
                     }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        pb1.Value = i;
+                        st_Text.Content = $"Progress: {i - num} / {App.sections.Count - num}";
+                    });
                 }
-                menu1.IsEnabled = true;
-                pb1.Value = 0;
-            }
+
+            });
+            menu1.IsEnabled = true;
+            pb1.Value = 0;
         }
 
         private void MI_DumpAllMem_Click(object sender, RoutedEventArgs e)
@@ -163,13 +220,13 @@ namespace NoxAdbDumper
             ProcInfo info = App.procs[n];
 
             OpenFolderDialog openFolderDialog = new OpenFolderDialog();
-            openFolderDialog.InitialFolder = App.Root;
+            openFolderDialog.InitialFolder = App.Settings.DumpSavePathOnDevice;
             if (openFolderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                RunShell("nox_adb.exe", "push pmdump /data/local/tmp/pmdump");
+                RunShell(App.Settings.AdbPath, "push pmdump /data/local/tmp/pmdump");
                 RunNoxShell("chmod 755 /data/local/tmp/pmdump");
                 RunNoxShell("cd /data/local/tmp && ./pmdump +r +w -x +p " + info.pid);
-                RunShell("nox_adb.exe", "pull data/local/tmp/output_pmdump.bin " + $"\"{Path.Combine(App.Root, "dump.bin")}\"");
+                RunShell(App.Settings.AdbPath, "pull data/local/tmp/output_pmdump.bin " + $"\"{Path.Combine(App.Settings.DumpSavePathOnPC, "dump.bin")}\"");
                 RunNoxShell("rm /data/local/tmp/output_pmdump.bin");
             }
         }
@@ -260,16 +317,22 @@ namespace NoxAdbDumper
             string result = outputStringBuilder.ToString();
             if (toLog)
             {
-                tb_log.Text = String.Empty;
-                tb_log.AppendText(">" + command + " " + args + "\r\n");
-                tb_log.AppendText(result.Replace("\r\n\r\n", "\r\n"));
+                Dispatcher.Invoke(() =>
+                {
+                    //tb_log.Text = String.Empty;
+                    tb_log.AppendText(">" + command + " " + args + "\r\n");
+                    tb_log.AppendText(result.Replace("\r\n\r\n", "\r\n"));
+                });
             }
             return result;
         }
 
         public string RunNoxShell(string command)
         {
-            return RunShell("nox_adb.exe", "shell " + command);
+            bool rootMode = false;
+            Dispatcher.Invoke(() => rootMode = MI_SuMode.IsChecked);
+            string cmdPrefix = rootMode ? "shell su -c " : "shell ";
+            return RunShell(App.Settings.AdbPath, cmdPrefix + command);
         }
 
         public void GetMemoryMapAPI(uint pid)
@@ -287,14 +350,28 @@ namespace NoxAdbDumper
             }
         }
 
-        private void DumpSection(int p, int s)
+        private void DumpSection(int p, int s, string outDir)
         {
             ProcInfo info = App.procs[p];
             MemSection section = App.sections[s];
-            uint size = section.end - section.start;
-            RunNoxShell("mkdir /data/data/com.wv.noxdumper/");
-            RunNoxShell("dd if=/proc/" + info.pid + "/mem of=/data/data/com.wv.noxdumper/dump bs=1 count=" + size + " skip=" + section.start);
-            RunShell("nox_adb.exe", "pull /data/data/com.wv.noxdumper/dump \"" + App.Root + "dump.bin\"");
+            UInt64 size = section.end - section.start;
+            string dumpName = string.Format("dump_{0}_{1}-{2}.bin", s, section.start.ToString("X"), section.end.ToString("X"));
+
+            Directory.CreateDirectory(outDir);
+            RunNoxShell($"mkdir {App.Settings.DumpSavePathOnDevice}");
+            RunNoxShell("dd if=/proc/" + info.pid + $"/mem of={App.Settings.DumpSavePathOnDevice}dump bs=1 count=" + size + " skip=" + section.start);
+            RunShell(App.Settings.AdbPath, "pull /data/data/com.wv.noxdumper/dump \"" + Path.Combine(outDir, dumpName) + "\"");
+        }
+
+        private void DumpSectionOnDevice(int p, int s)
+        {
+            ProcInfo info = App.procs[p];
+            MemSection section = App.sections[s];
+            UInt64 size = section.end - section.start;
+            string dumpName = string.Format("dump_{0}_{1}-{2}.bin", s, section.start.ToString("X"), section.end.ToString("X"));
+
+            RunNoxShell($"mkdir {App.Settings.DumpSavePathOnDevice}");
+            RunNoxShell("dd if=/proc/" + info.pid + $"/mem of={App.Settings.DumpSavePathOnDevice}{dumpName} bs=1 count=" + size + " skip=" + section.start);
         }
 
         public void RefreshProcesses()
@@ -349,6 +426,12 @@ namespace NoxAdbDumper
             public uint PPID { get; set; }
 
             public string Description { get; set; }
+        }
+
+        private void Mi_Options_Click(object sender, RoutedEventArgs e)
+        {
+            AppSettings settings = new AppSettings();
+            settings.ShowDialog();
         }
     }
 }
