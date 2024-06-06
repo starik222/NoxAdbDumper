@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -106,17 +107,23 @@ namespace NoxAdbDumper
             RefreshProcesses();
         }
 
-        private void MI_GetMemMap_Click(object sender, RoutedEventArgs e)
+        private async void MI_GetMemMap_Click(object sender, RoutedEventArgs e)
         {
             if (ls_Proc.SelectedIndex == -1) return;
+            SetStatus("Please wait...");
             int n = (ls_Proc.SelectedItem as ProcStruct).Count;
-
             App.sections = new List<MemSection>();
             ProcInfo info = App.procs[n];
-            GetMemoryMapAPI(info.pid);
+            menu1.IsEnabled = false;
+            await Task.Run(() =>
+            {
+                GetMemoryMapAPI(info.pid);
 
-            App.sections.Sort((x, y) => x.start.CompareTo(y.start));
+                App.sections.Sort((x, y) => x.start.CompareTo(y.start));
+            });
             RefreshSection();
+            menu1.IsEnabled = true;
+            SetStatus("Memory map received!");
         }
 
         private void MI_DumpSec_Click(object sender, RoutedEventArgs e)
@@ -138,26 +145,50 @@ namespace NoxAdbDumper
             if (m != -1) num = Convert.ToInt32(ls_Mem.SelectedItem.ToString().Split('|')[0]);
 
             OpenFolderDialog openFolderDialog = new OpenFolderDialog();
-            openFolderDialog.InitialFolder = App.Root;
+            openFolderDialog.InitialFolder = App.Settings.DumpSavePathOnPC;
             if (openFolderDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
+                DumpFilter filter = new DumpFilter();
+                if (!filter.ShowDialog().Value)
+                {
+                    filter.Close();
+                    return;
+                }
+                List<string> flagsFilter = filter.GetExcludedFlags();
+                List<string> sectNameFilter = filter.GetSectionNameFilter();
+                bool isSectNameFilter = filter.cb_sectContains.IsChecked.Value;
+                filter.Close();
                 pb1.Maximum = App.sections.Count;
                 menu1.IsEnabled = false;
                 await Task.Run(() =>
                 {
                     for (int i = num; i < App.sections.Count; i++)
                     {
-                        string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
-                        try
+                        bool dumpSection = true;
+
+                        if (flagsFilter.Any(a => App.sections[i].flags.StartsWith(a)))
                         {
-                            DumpSection(n, i, openFolderDialog.Folder);
+                            dumpSection = false;
                         }
-                        catch (Exception ex)
+                        else if (isSectNameFilter && !sectNameFilter.Any(a => App.sections[i].desc.Contains(a)))
                         {
-                            Dispatcher.Invoke(() =>
+                            dumpSection = false;
+                        }
+
+                        if (dumpSection)
+                        {
+                            try
                             {
-                                tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
-                            });
+                                DumpSection(n, i, openFolderDialog.Folder);
+                            }
+                            catch (Exception ex)
+                            {
+                                string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
+                                Dispatcher.Invoke(() =>
+                                {
+                                    tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
+                                });
+                            }
                         }
 
                         Dispatcher.Invoke(() =>
@@ -170,6 +201,7 @@ namespace NoxAdbDumper
                 });
                 menu1.IsEnabled = true;
                 pb1.Value = 0;
+                
             }
         }
 
@@ -181,36 +213,67 @@ namespace NoxAdbDumper
 
             int m = ls_Mem.SelectedIndex;
             if (m != -1) num = Convert.ToInt32(ls_Mem.SelectedItem.ToString().Split('|')[0]);
-
+            DumpFilter filter = new DumpFilter();
+            if (!filter.ShowDialog().Value)
+            {
+                filter.Close();
+                return;
+            }
+            List<string> flagsFilter = filter.GetExcludedFlags();
+            List<string> sectNameFilter = filter.GetSectionNameFilter();
+            bool isSectNameFilter = filter.cb_sectContains.IsChecked.Value;
+            filter.Close();
             pb1.Maximum = App.sections.Count;
             menu1.IsEnabled = false;
             await Task.Run(() =>
             {
                 for (int i = num; i < App.sections.Count; i++)
                 {
-                    string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
-                    try
+                    bool dumpSection = true;
+
+                    if (flagsFilter.Any(a => App.sections[i].flags.StartsWith(a)))
                     {
-                        DumpSectionOnDevice(n, i);
+                        dumpSection = false;
                     }
-                    catch (Exception ex)
+                    else if (isSectNameFilter && !sectNameFilter.Any(a => App.sections[i].desc.Contains(a)))
                     {
-                        Dispatcher.Invoke(() =>
+                        dumpSection = false;
+                    }
+
+                    if (dumpSection)
+                    {
+                        string name = "sec" + i.ToString("D4") + "_" + CleanName(App.sections[i].desc);
+                        try
                         {
-                            tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
-                        });
+                            DumpSectionOnDevice(n, i);
+                        }
+                        catch (Exception ex)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                tb_log.AppendText("Error for section #" + i + " '" + name + "'!\n" + ex.Message + "\r\n");
+                            });
+                        }
                     }
 
                     Dispatcher.Invoke(() =>
                     {
                         pb1.Value = i;
-                        st_Text.Content = $"Progress: {i - num} / {App.sections.Count - num}";
+                        SetStatus($"Progress: {i - num} / {App.sections.Count - num}");
                     });
                 }
 
             });
             menu1.IsEnabled = true;
             pb1.Value = 0;
+        }
+
+        private void SetStatus(string text)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                st_Text.Content = text;
+            });
         }
 
         private void MI_DumpAllMem_Click(object sender, RoutedEventArgs e)
